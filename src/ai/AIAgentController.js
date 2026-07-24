@@ -60,8 +60,10 @@ export class AIAgentController {
 // 주제가 정해지기 전까지는 이 함수만 게임별로 바꿔가며 테스트 가능.
 // 실제 게임 로직에서 기대하는 응답 shape을 여기서 미리 흉내내둔다.
 function defaultMockResponder(context) {
+  const roll = Math.random();
+  const action = roll < 0.7 ? 'chase' : roll < 0.85 ? 'flee' : 'idle';
   return {
-    action: 'idle',
+    action,
     dialogue: '(mock) 아직 AI 백엔드가 연결되지 않았습니다.',
     context
   };

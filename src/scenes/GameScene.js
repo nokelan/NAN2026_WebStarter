@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 import { AIAgentController } from '../ai/AIAgentController.js';
 import { log, setDebugVisible } from '../utils/DebugLogger.js';
 
-// 실제 게임 로직을 넣는 씬. 지금은 "AI가 조종하는 NPC 한 마리"라는 최소 예시만 들어있다.
-// 본선 주제가 정해지면 이 씬을 주제에 맞게 갈아끼우면 된다 — 구조(agent.decide() 호출 패턴)는 그대로 재사용.
+// AI 추격 서바이벌: 3초마다 AI가 고블린의 행동(idle/chase/flee)을 결정하고,
+// 결정된 상태에 따라 매 프레임 고블린이 플레이어를 추격/회피/대기한다.
+// 플레이어는 방향키로 이동하며 잡히지 않고 버티는 시간이 점수.
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('Game');
@@ -12,42 +13,153 @@ export class GameScene extends Phaser.Scene {
   create() {
     setDebugVisible(true);
 
+    this.add.image(480, 270, 'city-bg').setDisplaySize(960, 540).setAlpha(0.6);
+
     this.agent = new AIAgentController({
       endpoint: '', // 본선에서 프록시 URL로 교체
     });
 
-    this.npc = this.add.circle(this.scale.width / 2, this.scale.height / 2, 16, 0xff3355);
-    this.npcState = { hp: 100, mood: 'neutral' };
+    this.createAnims();
 
-    this.player = this.add.rectangle(80, 80, 24, 24, 0xffffff);
+    this.player = this.physics.add.sprite(160, 270, 'agent', 0).setCollideWorldBounds(true);
+    this.player.body.setSize(28, 40).setOffset(18, 20);
+    this.player.play('agent-idle');
+
+    this.goblin = this.physics.add.sprite(800, 270, 'goblin', 12).setCollideWorldBounds(true);
+    this.goblin.body.setSize(36, 44).setOffset(24, 16);
+    this.goblin.play('goblin-idle');
+
+    this.npcState = { hp: 100, mood: 'neutral', mode: 'idle' };
+    this.chaseSpeed = 90;
+    this.fleeSpeed = 70;
+
     this.cursors = this.input.keyboard.createCursorKeys();
+    this.physics.add.overlap(this.player, this.goblin, () => this.onCaught());
 
-    // 3초마다 AI에게 NPC 행동을 물어보는 예시 루프
-    this.time.addEvent({
+    this.gameOver = false;
+    this.survivalMs = 0;
+
+    this.scoreText = this.add.text(12, 10, '생존시간: 0.0s', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff'
+    });
+
+    this.decisionEvent = this.time.addEvent({
       delay: 3000,
       loop: true,
       callback: () => this.askAgentForNpcAction()
     });
+    this.askAgentForNpcAction();
 
     log('Game', '씬 시작');
   }
 
+  createAnims() {
+    if (!this.anims.exists('agent-idle')) {
+      this.anims.create({ key: 'agent-idle', frames: [{ key: 'agent', frame: 0 }], frameRate: 1 });
+    }
+    if (!this.anims.exists('agent-walk')) {
+      this.anims.create({
+        key: 'agent-walk',
+        frames: this.anims.generateFrameNumbers('agent', { start: 10, end: 14 }),
+        frameRate: 10,
+        repeat: -1
+      });
+    }
+    if (!this.anims.exists('goblin-idle')) {
+      this.anims.create({
+        key: 'goblin-idle',
+        frames: this.anims.generateFrameNumbers('goblin', { start: 12, end: 13 }),
+        frameRate: 3,
+        repeat: -1
+      });
+    }
+    if (!this.anims.exists('goblin-run')) {
+      this.anims.create({
+        key: 'goblin-run',
+        frames: this.anims.generateFrameNumbers('goblin', { start: 0, end: 5 }),
+        frameRate: 12,
+        repeat: -1
+      });
+    }
+  }
+
   async askAgentForNpcAction() {
+    if (this.gameOver) return;
+    const dist = Phaser.Math.Distance.Between(this.goblin.x, this.goblin.y, this.player.x, this.player.y);
     const context = {
       instruction: 'NPC의 다음 행동을 idle/chase/flee 중 하나로 결정하고 짧은 대사를 만들어줘.',
       npcState: this.npcState,
-      playerPos: { x: this.player.x, y: this.player.y }
+      playerPos: { x: this.player.x, y: this.player.y },
+      npcPos: { x: this.goblin.x, y: this.goblin.y },
+      distance: dist
     };
     const result = await this.agent.decide(context);
     log('Game', 'NPC 행동 결정', result);
-    // TODO: result.action 값에 따라 실제 NPC 이동/애니메이션 반영
+    if (['idle', 'chase', 'flee'].includes(result.action)) {
+      this.npcState.mode = result.action;
+    }
   }
 
-  update() {
-    const speed = 3;
-    if (this.cursors.left.isDown) this.player.x -= speed;
-    if (this.cursors.right.isDown) this.player.x += speed;
-    if (this.cursors.up.isDown) this.player.y -= speed;
-    if (this.cursors.down.isDown) this.player.y += speed;
+  onCaught() {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    this.player.setVelocity(0, 0);
+    this.goblin.setVelocity(0, 0);
+    this.decisionEvent.remove();
+
+    const seconds = (this.survivalMs / 1000).toFixed(1);
+    this.add.rectangle(480, 270, 960, 540, 0x000000, 0.6);
+    this.add.text(480, 250, `잡혔습니다! 생존시간: ${seconds}s`, {
+      fontFamily: 'monospace', fontSize: '22px', color: '#ff5555'
+    }).setOrigin(0.5);
+    const retry = this.add.text(480, 290, '[ 클릭해서 재시작 ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#0f0'
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    retry.on('pointerdown', () => this.scene.restart());
+
+    log('Game', '게임 오버', { seconds });
+  }
+
+  update(time, delta) {
+    if (this.gameOver) return;
+
+    this.survivalMs += delta;
+    this.scoreText.setText(`생존시간: ${(this.survivalMs / 1000).toFixed(1)}s`);
+
+    const speed = 140;
+    let vx = 0, vy = 0;
+    if (this.cursors.left.isDown) vx -= speed;
+    if (this.cursors.right.isDown) vx += speed;
+    if (this.cursors.up.isDown) vy -= speed;
+    if (this.cursors.down.isDown) vy += speed;
+    this.player.setVelocity(vx, vy);
+
+    if (vx !== 0 || vy !== 0) {
+      this.player.play('agent-walk', true);
+      if (vx !== 0) this.player.setFlipX(vx < 0);
+    } else {
+      this.player.play('agent-idle', true);
+    }
+
+    this.updateGoblin();
+  }
+
+  updateGoblin() {
+    const dx = this.player.x - this.goblin.x;
+    const dy = this.player.y - this.goblin.y;
+    const dist = Math.hypot(dx, dy) || 1;
+
+    if (this.npcState.mode === 'chase') {
+      this.goblin.setVelocity((dx / dist) * this.chaseSpeed, (dy / dist) * this.chaseSpeed);
+      this.goblin.play('goblin-run', true);
+      this.goblin.setFlipX(dx < 0);
+    } else if (this.npcState.mode === 'flee') {
+      this.goblin.setVelocity((-dx / dist) * this.fleeSpeed, (-dy / dist) * this.fleeSpeed);
+      this.goblin.play('goblin-run', true);
+      this.goblin.setFlipX(dx > 0);
+    } else {
+      this.goblin.setVelocity(0, 0);
+      this.goblin.play('goblin-idle', true);
+    }
   }
 }
