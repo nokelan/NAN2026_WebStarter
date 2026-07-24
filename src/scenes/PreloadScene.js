@@ -14,9 +14,6 @@ export class PreloadScene extends Phaser.Scene {
     this.load.on('progress', (value) => {
       bar.width = 4 + value * (width * 0.5);
     });
-
-    this.load.spritesheet('agent', 'assets/agent.png', { frameWidth: 64, frameHeight: 64 });
-    this.load.spritesheet('goblin', 'assets/goblin.png', { frameWidth: 84, frameHeight: 64 });
   }
 
   create() {

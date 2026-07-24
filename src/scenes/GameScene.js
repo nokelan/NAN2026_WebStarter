@@ -17,19 +17,17 @@ export class GameScene extends Phaser.Scene {
       endpoint: '', // 본선에서 프록시 URL로 교체
     });
 
-    this.createAnims();
+    this.player = this.add.circle(160, 270, 16, 0x4fc3f7);
+    this.physics.add.existing(this.player);
+    this.player.body.setCircle(16).setCollideWorldBounds(true);
 
-    this.player = this.physics.add.sprite(160, 270, 'agent', 0).setCollideWorldBounds(true);
-    this.player.body.setSize(28, 40).setOffset(18, 20);
-    this.player.play('agent-idle');
-
-    this.goblin = this.physics.add.sprite(800, 270, 'goblin', 12).setCollideWorldBounds(true);
-    this.goblin.body.setSize(36, 44).setOffset(24, 16);
-    this.goblin.play('goblin-idle');
+    this.goblin = this.add.circle(800, 270, 18, 0xff5555);
+    this.physics.add.existing(this.goblin);
+    this.goblin.body.setCircle(18).setCollideWorldBounds(true);
 
     this.npcState = { hp: 100, mood: 'neutral', mode: 'idle' };
-    this.chaseSpeed = 90;
-    this.fleeSpeed = 70;
+    this.chaseSpeed = 130;
+    this.fleeSpeed = 90;
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.physics.add.overlap(this.player, this.goblin, () => this.onCaught());
@@ -92,36 +90,6 @@ export class GameScene extends Phaser.Scene {
     this.joyVector = { x: dist < 8 ? 0 : Math.cos(angle) * (dist / radius), y: dist < 8 ? 0 : Math.sin(angle) * (dist / radius) };
   }
 
-  createAnims() {
-    if (!this.anims.exists('agent-idle')) {
-      this.anims.create({ key: 'agent-idle', frames: [{ key: 'agent', frame: 0 }], frameRate: 1 });
-    }
-    if (!this.anims.exists('agent-walk')) {
-      this.anims.create({
-        key: 'agent-walk',
-        frames: this.anims.generateFrameNumbers('agent', { start: 10, end: 14 }),
-        frameRate: 10,
-        repeat: -1
-      });
-    }
-    if (!this.anims.exists('goblin-idle')) {
-      this.anims.create({
-        key: 'goblin-idle',
-        frames: this.anims.generateFrameNumbers('goblin', { start: 12, end: 13 }),
-        frameRate: 3,
-        repeat: -1
-      });
-    }
-    if (!this.anims.exists('goblin-run')) {
-      this.anims.create({
-        key: 'goblin-run',
-        frames: this.anims.generateFrameNumbers('goblin', { start: 0, end: 5 }),
-        frameRate: 12,
-        repeat: -1
-      });
-    }
-  }
-
   async askAgentForNpcAction() {
     if (this.gameOver) return;
     const dist = Phaser.Math.Distance.Between(this.goblin.x, this.goblin.y, this.player.x, this.player.y);
@@ -142,8 +110,8 @@ export class GameScene extends Phaser.Scene {
   onCaught() {
     if (this.gameOver) return;
     this.gameOver = true;
-    this.player.setVelocity(0, 0);
-    this.goblin.setVelocity(0, 0);
+    this.player.body.setVelocity(0, 0);
+    this.goblin.body.setVelocity(0, 0);
     this.decisionEvent.remove();
 
     const seconds = (this.survivalMs / 1000).toFixed(1);
@@ -175,14 +143,7 @@ export class GameScene extends Phaser.Scene {
       vx = this.joyVector.x * speed;
       vy = this.joyVector.y * speed;
     }
-    this.player.setVelocity(vx, vy);
-
-    if (vx !== 0 || vy !== 0) {
-      this.player.play('agent-walk', true);
-      if (vx !== 0) this.player.setFlipX(vx < 0);
-    } else {
-      this.player.play('agent-idle', true);
-    }
+    this.player.body.setVelocity(vx, vy);
 
     this.updateGoblin();
   }
@@ -193,16 +154,11 @@ export class GameScene extends Phaser.Scene {
     const dist = Math.hypot(dx, dy) || 1;
 
     if (this.npcState.mode === 'chase') {
-      this.goblin.setVelocity((dx / dist) * this.chaseSpeed, (dy / dist) * this.chaseSpeed);
-      this.goblin.play('goblin-run', true);
-      this.goblin.setFlipX(dx < 0);
+      this.goblin.body.setVelocity((dx / dist) * this.chaseSpeed, (dy / dist) * this.chaseSpeed);
     } else if (this.npcState.mode === 'flee') {
-      this.goblin.setVelocity((-dx / dist) * this.fleeSpeed, (-dy / dist) * this.fleeSpeed);
-      this.goblin.play('goblin-run', true);
-      this.goblin.setFlipX(dx > 0);
+      this.goblin.body.setVelocity((-dx / dist) * this.fleeSpeed, (-dy / dist) * this.fleeSpeed);
     } else {
-      this.goblin.setVelocity(0, 0);
-      this.goblin.play('goblin-idle', true);
+      this.goblin.body.setVelocity(0, 0);
     }
   }
 }
