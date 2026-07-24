@@ -13,8 +13,6 @@ export class GameScene extends Phaser.Scene {
   create() {
     setDebugVisible(false);
 
-    this.add.image(480, 270, 'city-bg').setDisplaySize(960, 540).setAlpha(0.6);
-
     this.agent = new AIAgentController({
       endpoint: '', // 본선에서 프록시 URL로 교체
     });
