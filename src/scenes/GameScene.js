@@ -36,6 +36,11 @@ export class GameScene extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.physics.add.overlap(this.player, this.goblin, () => this.onCaught());
 
+    this.joyVector = { x: 0, y: 0 };
+    if (this.sys.game.device.input.touch) {
+      this.createVirtualJoystick();
+    }
+
     this.gameOver = false;
     this.survivalMs = 0;
 
@@ -51,6 +56,42 @@ export class GameScene extends Phaser.Scene {
     this.askAgentForNpcAction();
 
     log('Game', '씬 시작');
+  }
+
+  createVirtualJoystick() {
+    const baseX = 100, baseY = 440, radius = 50;
+    this.joyBase = this.add.circle(baseX, baseY, radius, 0xffffff, 0.15)
+      .setScrollFactor(0).setDepth(1000).setStrokeStyle(2, 0xffffff, 0.4);
+    this.joyKnob = this.add.circle(baseX, baseY, 22, 0xffffff, 0.35).setScrollFactor(0).setDepth(1001);
+    this.joyPointerId = null;
+
+    this.input.on('pointerdown', (pointer) => {
+      if (Phaser.Math.Distance.Between(pointer.x, pointer.y, baseX, baseY) <= radius * 1.5) {
+        this.joyPointerId = pointer.id;
+        this.updateJoystick(pointer, baseX, baseY, radius);
+      }
+    });
+    this.input.on('pointermove', (pointer) => {
+      if (pointer.id === this.joyPointerId) this.updateJoystick(pointer, baseX, baseY, radius);
+    });
+    const release = (pointer) => {
+      if (pointer.id === this.joyPointerId) {
+        this.joyPointerId = null;
+        this.joyVector = { x: 0, y: 0 };
+        this.joyKnob.setPosition(baseX, baseY);
+      }
+    };
+    this.input.on('pointerup', release);
+    this.input.on('pointerupoutside', release);
+  }
+
+  updateJoystick(pointer, baseX, baseY, radius) {
+    const dx = pointer.x - baseX;
+    const dy = pointer.y - baseY;
+    const dist = Math.min(Math.hypot(dx, dy), radius);
+    const angle = Math.atan2(dy, dx);
+    this.joyKnob.setPosition(baseX + Math.cos(angle) * dist, baseY + Math.sin(angle) * dist);
+    this.joyVector = { x: dist < 8 ? 0 : Math.cos(angle) * (dist / radius), y: dist < 8 ? 0 : Math.sin(angle) * (dist / radius) };
   }
 
   createAnims() {
@@ -132,6 +173,10 @@ export class GameScene extends Phaser.Scene {
     if (this.cursors.right.isDown) vx += speed;
     if (this.cursors.up.isDown) vy -= speed;
     if (this.cursors.down.isDown) vy += speed;
+    if (this.joyVector.x !== 0 || this.joyVector.y !== 0) {
+      vx = this.joyVector.x * speed;
+      vy = this.joyVector.y * speed;
+    }
     this.player.setVelocity(vx, vy);
 
     if (vx !== 0 || vy !== 0) {
