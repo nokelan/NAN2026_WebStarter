@@ -11,7 +11,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    setDebugVisible(true);
+    setDebugVisible(false);
 
     this.add.image(480, 270, 'city-bg').setDisplaySize(960, 540).setAlpha(0.6);
 
